@@ -1,0 +1,13 @@
+# core (data tools, vector index, evaluation)
+numpy>=1.24
+opencv-python>=4.8
+scipy>=1.10
+pyyaml>=6.0
+
+# detector
+ultralytics>=8.3        # YOLOv8 / YOLO11; pulls in torch + torchvision
+
+# recognizer
+timm>=1.0               # DINOv2 and other backbones
+faiss-cpu>=1.7          # optional; numpy fallback is used if missing
+ensemble-boxes>=1.0     # optional; numpy WBF fallback is used if missing

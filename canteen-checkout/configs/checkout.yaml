@@ -1,0 +1,35 @@
+# Runtime configuration for demo.py / CheckoutPipeline.from_config.
+# Relative paths are resolved against this file's folder.
+
+detector:
+  weights: ../runs/detector/unimib/weights/best.pt
+  conf: 0.30          # detection confidence threshold
+  iou: 0.60           # NMS IoU
+  imgsz: 640
+  tta: false          # flip TTA + WBF fusion (slower, a bit more recall)
+  max_det: 50
+
+embedder:
+  type: timm                                   # timm | hist (hist = torch-free baseline)
+  model_name: vit_small_patch14_dinov2.lvd142m
+  checkpoint: null                             # e.g. ../runs/embedder/best.pt
+  img_size: 224
+  tta_flip: true
+
+index:
+  path: ../gallery.npz
+  k: 50
+
+# Calibrate on the val split:  python evaluate.py ... --split val --calibrate 0.98
+decision:
+  accept_sim: 0.60    # min cosine similarity to auto-accept
+  margin: 0.05        # min gap between best and second-best dish
+  unknown_sim: 0.35   # below this: "unrecognised"
+
+crop:
+  pad: 0.08
+  mask_bg: true       # must match how the gallery crops were made
+
+pricing:
+  csv: ../data/prices.csv         # start from prices_template.csv written by the converter
+  weight_tolerance: 0.15          # flag if |measured - expected| / expected > 15 %

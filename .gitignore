@@ -1,0 +1,28 @@
+*
+!.gitignore
+
+# 保留 canteen-checkout
+!canteen-checkout/
+!canteen-checkout/**
+canteen-checkout/runs/
+canteen-checkout/*.pt
+canteen-checkout/**/*.pt
+canteen-checkout/*.pth
+canteen-checkout/**/*.pth
+
+# 但不要上传依赖、build、cache
+canteen-checkout/node_modules/
+canteen-checkout/.next/
+canteen-checkout/dist/
+canteen-checkout/build/
+canteen-checkout/.venv/
+canteen-checkout/venv/
+canteen-checkout/__pycache__/
+canteen-checkout/**/*.pyc
+canteen-checkout/.DS_Store
+
+!colab-upload/
+
+colab-upload/*
+!colab-upload/*.ipynb
+EOF
