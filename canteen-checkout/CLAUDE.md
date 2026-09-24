@@ -1,4 +1,4 @@
-# CLAUDE.md — canteen_checkout
+# CLAUDE.md — canteen-checkout
 
 Two-stage canteen tray checkout on UNIMIB2016, built as a local target for red-team
 evaluation of vision-based self-checkout:
@@ -7,7 +7,7 @@ evaluation of vision-based self-checkout:
 2. crop (outline-masked) → DINOv2 embedding (timm, optional ArcFace fine-tune) → kNN over
    `gallery.npz` → accept / uncertain / unknown → price list → weight cross-check
 
-Read `README.md` (Chinese) for the full workflow. The user writes in Chinese; reply in Chinese.
+Read `README.md` for the full workflow. The user writes in Chinese; reply in Chinese.
 
 ## Layout on this machine
 
@@ -17,7 +17,8 @@ Read `README.md` (Chinese) for the full workflow. The user writes in Chinese; re
   annotations.mat, TrainingSet.mat, TestSet.mat, *_food_list.mat   — official files, NEVER modify
   annotations_json/      same annotations decoded to JSON + split .txt + class lists
   unimib_yolo/           converted dataset (already generated, see below)
-  canteen_checkout/      this project
+  canteen-checkout/      this project
+  colab-upload/          zips + notebook for Google Colab (zip unpacks to canteen_checkout/)
 ```
 
 `unimib_yolo/` = output of `tools/convert_unimib.py` with the official split:
@@ -25,6 +26,9 @@ Read `README.md` (Chinese) for the full workflow. The user writes in Chinese; re
 1600 px long side. `data.yaml` has no `path:` key on purpose (Ultralytics resolves the
 folders relative to the yaml). `crops/{train,val,test}/<class>/` hold gallery crops;
 `instances.json` holds every GT instance (boxes/polygons in the 1600 px image coordinates).
+Class names are English, generated with `--class-map tools/class_names_en.csv`; `raw_class`
+keeps the official Italian name. `tools/relabel_gallery.py` converts galleries built with the
+Italian names.
 
 ## Hard-won facts — do not regress
 
@@ -58,7 +62,7 @@ folders relative to the yaml). `crops/{train,val,test}/<class>/` hold gallery cr
 ## Environment (Apple silicon Mac)
 
 ```bash
-cd ~/Downloads/archive/canteen_checkout
+cd ~/Downloads/archive/canteen-checkout
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt        # torch from PyPI includes MPS support
 python tests/smoke_test.py

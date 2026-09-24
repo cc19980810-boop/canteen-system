@@ -1,7 +1,7 @@
 *
 !.gitignore
 
-# 保留 canteen-checkout
+# keep canteen-checkout
 !canteen-checkout/
 !canteen-checkout/**
 canteen-checkout/runs/
@@ -10,7 +10,7 @@ canteen-checkout/**/*.pt
 canteen-checkout/*.pth
 canteen-checkout/**/*.pth
 
-# 但不要上传依赖、build、cache
+# but not dependencies, builds or caches
 canteen-checkout/node_modules/
 canteen-checkout/.next/
 canteen-checkout/dist/

@@ -328,6 +328,10 @@ def main():
     ap.add_argument("--class-list", type=Path, default=None,
                     help="restrict to a class list .mat/.txt, e.g. ROOT/final_food_list.mat (65 classes used in "
                          "the paper); instances of other classes are dropped from crops but kept for the detector")
+    ap.add_argument("--class-map", type=Path, default=None,
+                    help="CSV with columns italian,english[,display_name] (e.g. tools/class_names_en.csv): "
+                         "renames classes in crops/, instances.json, classes.txt and the price template; "
+                         "raw_class keeps the official name")
     args = ap.parse_args()
 
     ann_files = args.ann or [args.root / "annotations.mat"]
@@ -435,6 +439,23 @@ def main():
         print(f"class list: {len(allowed)} classes, {len(allowed & present)} present in annotations; "
               f"dropped from gallery crops: {sorted(present - allowed)}")
 
+    cmap, cdisplay = {}, {}
+    if args.class_map:
+        with open(args.class_map, newline="") as f:
+            for r in csv.DictReader(f):
+                cmap[safe_name(r["italian"])] = safe_name(r["english"])
+                cdisplay[safe_name(r["english"])] = (r.get("display_name") or "").strip()
+        if len(set(cmap.values())) != len(cmap):
+            sys.exit(f"{args.class_map}: two classes map to the same name")
+        present = {safe_name(c) for items in per_image.values() for c, _ in items}
+        if allowed is not None:
+            present &= allowed
+        unmapped = sorted(present - set(cmap))
+        print(f"class map: {len(cmap)} entries; unmapped classes keep their name: {unmapped}")
+
+    def cname(c):
+        return cmap.get(safe_name(c), safe_name(c))
+
     # ---- write
     out = args.out.resolve()
     for s in splits:
@@ -492,7 +513,7 @@ def main():
                 crop_rel = None
                 in_list = allowed is None or safe_name(cls) in allowed
                 if not args.no_crops and in_list:
-                    cdir = out / "crops" / split / safe_name(cls)
+                    cdir = out / "crops" / split / cname(cls)
                     crop_path = cdir / f"{name}_{k}.jpg"
                     if not (crop_path.exists() and label_file.exists()):
                         if img is None:
@@ -506,11 +527,11 @@ def main():
                     crop_rel = str(crop_path.relative_to(out))
                 instances.append({
                     "image": name, "file": str(dst.relative_to(out)), "scale": scale,
-                    "split": split, "class": safe_name(cls), "raw_class": cls,
+                    "split": split, "class": cname(cls), "raw_class": cls,
                     "box": [float(x1), float(y1), float(x2), float(y2)],
                     "polygon": np.round(poly, 1).tolist(), "crop": crop_rel, "in_class_list": in_list,
                 })
-                class_counts[(split, safe_name(cls))] += 1
+                class_counts[(split, cname(cls))] += 1
             label_file.write_text("\n".join(lines) + "\n")  # written last = marks the image as done
 
     classes = sorted({i["class"] for i in instances})
@@ -526,7 +547,7 @@ def main():
         wr.writerow(["class", "price", "weight_g", "display_name"])
         for c in classes:
             raw = next(i["raw_class"] for i in instances if i["class"] == c)
-            wr.writerow([c, "", "", raw])
+            wr.writerow([c, "", "", cdisplay.get(c) or raw])
 
     print(f"images: " + ", ".join(f"{s}={len(v)}" for s, v in splits.items()))
     print(f"instances: {len(instances)}  classes: {len(classes)}  dropped: {dict(dropped)}")

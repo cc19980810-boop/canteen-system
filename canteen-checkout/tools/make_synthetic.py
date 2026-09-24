@@ -18,14 +18,14 @@ from scipy.io import savemat
 
 CLASSES = [
     # name,               BGR colour,       shape,     texture
-    ("pasta_al_pomodoro", (40, 60, 200),   "ellipse", "stripes"),
-    ("insalata_mista",    (60, 170, 70),   "blob",    "dots"),
-    ("patate_fritte",     (60, 200, 230),  "rect",    "stripes"),
-    ("pane",              (90, 140, 190),  "ellipse", "plain"),
-    ("mandarini",         (30, 140, 245),  "circle",  "dots"),
+    ("pasta_tomato_sauce",(40, 60, 200),   "ellipse", "stripes"),
+    ("mixed_salad",       (60, 170, 70),   "blob",    "dots"),
+    ("french_fries",      (60, 200, 230),  "rect",    "stripes"),
+    ("bread",             (90, 140, 190),  "ellipse", "plain"),
+    ("mandarins",         (30, 140, 245),  "circle",  "dots"),
     ("yogurt",            (235, 235, 240), "circle",  "plain"),
-    ("budino",            (40, 80, 120),   "circle",  "plain"),
-    ("budino_caramello",  (45, 85, 125),   "circle",  "plain"),   # near-duplicate of budino
+    ("pudding",           (40, 80, 120),   "circle",  "plain"),
+    ("caramel_pudding",   (45, 85, 125),   "circle",  "plain"),   # near-duplicate of pudding
 ]
 
 

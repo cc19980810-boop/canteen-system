@@ -1,52 +1,55 @@
-# 食堂视觉结算：YOLO 检测 + 向量检索识别
+# Canteen vision checkout: YOLO detection + vector-retrieval recognition
 
-在 UNIMIB2016 上实现的两阶段食堂托盘结算原型：
+A two-stage canteen tray checkout prototype built on UNIMIB2016:
 
 ```
-托盘照片 ──► YOLOv8/YOLO11-seg（只有一个类别：food）──► 每道菜的框 + 轮廓
-             │
-             ├─► 按轮廓裁剪并遮住背景 ──► DINOv2 特征（可用 ArcFace 微调）──► L2 归一化向量
-             │                                                      │
-             │                         图库 gallery.npz（FAISS / numpy 余弦 kNN）◄─┘
-             │                                                      │
-             └─► 判定：accept / uncertain（请顾客确认）/ unknown ──► 价格表 ──► 称重交叉校验 ──► 小票
+tray photo ──► YOLOv8/YOLO11-seg (a single class: food) ──► box + outline per dish
+               │
+               ├─► crop along the outline, mask the background ──► DINOv2 features (optional ArcFace fine-tune) ──► L2-normalised vector
+               │                                                      │
+               │                         gallery.npz (FAISS / numpy cosine kNN) ◄─┘
+               │                                                      │
+               └─► decision: accept / uncertain (ask the customer) / unknown ──► price list ──► weight cross-check ──► receipt
 ```
 
-**为什么这样拆分**：检测器只回答“有几道菜、在哪里”，与菜单无关；“这是哪道菜”交给向量检索。所以**新增一道菜只需要拍几张照片加入图库，不需要重新训练任何模型**（`build_gallery.py --append`）。
+**Why split it this way**: the detector only answers "how many dishes, and where"; it knows nothing about the menu. "Which dish is this" is left to vector retrieval. So **adding a dish only takes a few photos added to the gallery, with no model retraining** (`build_gallery.py --append`).
 
-### 从 lannguyen0910/food-recognition 借鉴的部分
-该仓库使用 YOLOv5 做检测、EfficientNet 对检测结果二次分类，并用 TTA + Weighted Boxes Fusion 融合结果。本项目沿用了“先检测、后二次识别”的结构和 **翻转 TTA + WBF**（`checkout/detector.py`、`checkout/boxes.py`），但做了三处改动：
-1. 检测器换成 Ultralytics YOLOv8/YOLO11，并改为**类别无关**的单类检测（`single_cls=True`）；
-2. 二次识别由固定类别的分类器换成**向量检索**，并加入开放集拒识（unknown）；
-3. 增加针对结算场景的输出：不确定项确认、价格表、称重校验，以及“静默错误率”评估。
+### What is borrowed from lannguyen0910/food-recognition
+That repository uses YOLOv5 for detection, EfficientNet to re-classify the detections, and TTA + Weighted Boxes Fusion to merge results. This project keeps the "detect first, then recognise" structure and **flip TTA + WBF** (`checkout/detector.py`, `checkout/boxes.py`), with three changes:
+1. The detector is Ultralytics YOLOv8/YOLO11, trained as a **class-agnostic** single-class detector (`single_cls=True`).
+2. The fixed-class re-classifier is replaced by **vector retrieval** with open-set rejection (unknown).
+3. Checkout-specific outputs are added: confirmation of uncertain items, a price list, a weight check, and a "silent error rate" evaluation.
 
 ---
 
-## 目录
+## Layout
 
-| 文件 | 作用 |
+| File | Purpose |
 |---|---|
-| `tools/convert_unimib.py` | UNIMIB2016 → YOLO-seg/detect 标签、`data.yaml`、每类裁剪图、`instances.json`、价格表模板 |
-| `train_detector.py` | 训练类别无关检测器（YOLO11 / YOLOv8，seg 或 detect） |
-| `finetune_embedder.py` | 可选：ArcFace 微调检索主干，验证指标就是检索 top-1 |
-| `build_gallery.py` | 用裁剪图建图库；`--append` 新增菜品 |
-| `evaluate.py` | 检测 / 识别 / 端到端三级评估，`--calibrate` 自动选阈值 |
-| `demo.py` + `configs/checkout.yaml` | 单张或整个文件夹出小票 |
-| `checkout/` | 库代码：裁剪、检测封装、嵌入、向量索引、流水线 |
-| `tests/smoke_test.py` | 不依赖 torch 的冒烟测试（合成数据） |
-| `tools/make_synthetic.py` | 生成与 UNIMIB2016 同结构的合成数据，用于测试 |
+| `tools/convert_unimib.py` | UNIMIB2016 → YOLO-seg/detect labels, `data.yaml`, per-class crops, `instances.json`, price template |
+| `tools/class_names_en.csv` | Italian → English class names (used with `--class-map`) |
+| `tools/relabel_gallery.py` | Rename the classes of an existing `gallery.npz` without re-embedding |
+| `train_detector.py` | Train the class-agnostic detector (YOLO11 / YOLOv8, seg or detect) |
+| `finetune_embedder.py` | Optional: ArcFace fine-tune of the retrieval backbone; the validation metric is retrieval top-1 |
+| `build_gallery.py` | Build the gallery from crops; `--append` adds dishes |
+| `evaluate.py` | Three-level evaluation (detection / recognition / end to end); `--calibrate` picks thresholds |
+| `demo.py` + `configs/checkout.yaml` | Receipt for one image or a whole folder |
+| `colab_checkout.ipynb` | The full workflow on Google Colab (GPU) |
+| `checkout/` | Library code: cropping, detector wrapper, embedder, vector index, pipeline |
+| `tests/smoke_test.py` | Smoke test without torch (synthetic data) |
+| `tools/make_synthetic.py` | Synthetic data with the same structure as UNIMIB2016, for tests |
 
-## 环境
+## Environment
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt       # ultralytics 会安装 torch；有 GPU 请先按 pytorch.org 装对应 CUDA 版
-python tests/smoke_test.py            # 约 10 秒，验证数据转换、索引、流水线、评估都能跑通
+pip install -r requirements.txt       # ultralytics installs torch; with a GPU, install the matching CUDA build from pytorch.org first
+python tests/smoke_test.py            # ~10 s; checks conversion, index, pipeline and evaluation end to end
 ```
 
-## 1. 准备 UNIMIB2016
+## 1. Prepare UNIMIB2016
 
-从米兰比可卡大学 IVL 实验室官网申请/下载 UNIMIB2016（仅限研究用途，请遵守其许可）。解压后应有：
+Request/download UNIMIB2016 from the IVL lab at the University of Milano-Bicocca (research use only; follow its licence). After extracting you should have:
 
 ```
 UNIMIB2016/
@@ -56,110 +59,114 @@ UNIMIB2016/
 ```
 
 ```bash
-# 先看一下标注结构（annotations.mat 的嵌套方式在不同发布版本中略有差异）
+# look at the annotation structure first (the nesting of annotations.mat differs slightly between releases)
 python tools/convert_unimib.py --root /path/UNIMIB2016 --out data/unimib_yolo --inspect
 
-# 转换：默认生成实例分割标签（多边形），train 中划 10% 作 val，test 用官方划分
-python tools/convert_unimib.py --root /path/UNIMIB2016 --out data/unimib_yolo
+# convert: instance-segmentation labels (polygons) by default, 10% of train held out as val, official test split
+python tools/convert_unimib.py --root /path/UNIMIB2016 --out data/unimib_yolo --class-map tools/class_names_en.csv
 ```
 
-**Kaggle 版（`archive/original/` + 根目录下的 `.mat`）**：官方 `annotations.mat` 存的是 MATLAB `containers.Map` 对象，转换器已能直接解码（需要 scipy）。如果运行转换的机器没有 scipy，可以先在有 scipy 的机器上导出 JSON，再用 JSON 转换：
+**Kaggle copy (`archive/original/` + the `.mat` files at the top level)**: the official `annotations.mat` stores a MATLAB `containers.Map` object, which the converter decodes directly (needs scipy). If the machine running the conversion has no scipy, export JSON on a machine that has it, then convert from the JSON:
 
 ```bash
-python tools/convert_unimib.py --root archive --export-json archive/annotations_json   # 需要 scipy
+python tools/convert_unimib.py --root archive --export-json archive/annotations_json   # needs scipy
 python tools/convert_unimib.py --root archive --images archive/original \
     --ann archive/annotations_json/annotations.json \
     --train-split archive/annotations_json/TrainingSet.txt --test-split archive/annotations_json/TestSet.txt \
-    --out archive/unimib_yolo
+    --class-map tools/class_names_en.csv --out archive/unimib_yolo
 ```
 
-实际结果：官方划分 650 train / 360 test，另有 17 张不在任何列表中而被排除；共 1,010 张、3,561 个实例、**65 类**（与论文一致，其余 8 类只出现在那 17 张里）。其中 6 个类别的训练样本少于 5 个。
+Actual result: the official split has 650 train / 360 test images, and 17 annotated images are in neither list and are excluded. That leaves 1,010 images, 3,561 instances and **65 classes** (matching the paper; the other 8 classes appear only in those 17 images). 6 classes have fewer than 5 training samples.
 
-**EXIF 方向（重要）**：1,027 张照片中有 925 张带 EXIF 旋转标记，但 UNIMIB 的多边形是按**原始像素**标注的（MATLAB 的 `imread` 忽略 EXIF）。OpenCV、PIL 和 Ultralytics 默认都会按 EXIF 旋转图片，这样标签就会错位。转换器会把这些图片按原始像素方向重新编码并去掉 EXIF，默认同时缩放到最长边 1600 像素（`--max-side`）。文件名中的 `(0)` 这类下载重复后缀也会自动去掉。
+**Class names**: UNIMIB class names are Italian (`banane`, `pane`, ...). With `--class-map tools/class_names_en.csv` the converter writes English names to `crops/`, `instances.json`, `classes.txt` and `prices_template.csv` (whose `display_name` column gets a readable English name); `raw_class` in `instances.json` keeps the official Italian name. Without `--class-map` the Italian names are kept. A gallery built with the Italian names can be switched without re-embedding: `python tools/relabel_gallery.py --gallery gallery.npz --out gallery_en.npz`.
 
-**部分物品未标注**：UNIMIB 只标注了部分食物，托盘上的面包、火腿、包装食品等常常没有轮廓。检测器会把它们当作背景来学习，所以用它来“数件数”时会漏掉这类物品。实际部署前需要补标，或者用自己采集的数据微调。
+**EXIF orientation (important)**: 925 of the 1,027 photos carry an EXIF rotation tag, but the UNIMIB polygons are annotated in the **raw pixel grid** (MATLAB's `imread` ignores EXIF). OpenCV, PIL and Ultralytics all apply EXIF rotation by default, which would misalign the labels. The converter re-encodes these images in the raw pixel orientation without EXIF, and by default also resizes them to a 1600 px long side (`--max-side`). Download-duplicate suffixes such as `(0)` in file names are stripped automatically.
 
-转换器不写死 `.mat` 的层级，而是遍历整个结构、收集所有带 `BR`（边界多边形）字段的节点，从最近的键名或同级字符串推断图像名，从 `class` 字段或上层键名推断类别。它也接受 gist-ailab/Food-Instance-Segmentation 导出的 `annotations/{train,test}.json`（`--ann train.json --ann test.json`，此时没有类别名，只能训练检测器）。
+**Some items are not annotated**: UNIMIB only annotates some of the food; bread, ham, packaged food and the like on a tray often have no outline. The detector learns them as background, so item counts will miss them. Before real deployment, add the missing annotations or fine-tune on your own data.
 
-**请核对输出的统计**：UNIMIB2016 公布的是 1,027 张托盘、73 类、约 3,616 个实例。如果数量明显不对，用 `--inspect` 查看结构并调整 `Walker`。输出末尾会警告哪些类别在 train 中没有样本（这些类图库识别不了）。
+The converter does not hard-code the `.mat` hierarchy. It walks the whole structure and collects every node with a `BR` (boundary polygon) field, infers the image name from the nearest key or sibling string, and the class from a `class` field or the enclosing key. It also accepts the `annotations/{train,test}.json` export from gist-ailab/Food-Instance-Segmentation (`--ann train.json --ann test.json`; those have no class names, so only the detector can be trained).
 
-## 2. 训练检测器
+**Check the printed statistics**: UNIMIB2016 is published as 1,027 trays, 73 classes and about 3,616 instances. If the numbers are clearly off, inspect the structure with `--inspect` and adjust `Walker`. The end of the output warns about classes with no train samples (the gallery cannot recognise them).
+
+## 2. Train the detector
 
 ```bash
 python train_detector.py --data data/unimib_yolo/data.yaml --model yolo11s-seg.pt --epochs 100 --batch 16 --device 0
-# Apple 芯片 Mac：--device mps --batch 8 --workers 2（没有 GPU 时用 yolo11n-seg.pt、--imgsz 640 起步）
-# 或 YOLOv8：--model yolov8s-seg.pt；只要框：转换时加 --task detect，模型用 yolo11s.pt
+# Apple silicon Mac: --device mps --batch 8 --workers 2 (without a GPU start with yolo11n-seg.pt and --imgsz 640)
+# or YOLOv8: --model yolov8s-seg.pt; boxes only: convert with --task detect and use yolo11s.pt
 ```
 
-增强参数针对俯拍托盘做了调整：允许旋转和上下翻转，但色调抖动几乎关闭（颜色是区分菜品的关键线索），不使用 mixup。训练结束会在 val/test 上评估并写入 `eval_report.json`。
+Augmentation is tuned for top-down tray photos: rotation and vertical flips are allowed, hue jitter is almost off (colour is a key cue for telling dishes apart), and mixup is not used. At the end of training the model is evaluated on val/test and the result is written to `eval_report.json`.
 
-建议使用 seg 模型：轮廓能在裁剪时遮住餐盘和相邻菜品，对识别准确率帮助明显；UNIMIB 中菜品经常挨在同一个盘子里。
+Seg models are recommended: the outline masks out the plate and neighbouring dishes when cropping, which helps recognition noticeably; in UNIMIB, dishes often share a plate.
 
-## 3. 建图库（识别模块）
+## 3. Build the gallery (recognition)
 
 ```bash
-# 直接使用预训练 DINOv2 特征
+# pretrained DINOv2 features as-is
 python build_gallery.py --crops data/unimib_yolo/crops/train --out gallery.npz
 
-# 可选：ArcFace 微调（UNIMIB 类别长尾，建议 --balanced）
+# optional: ArcFace fine-tune (UNIMIB classes are long-tailed, --balanced recommended)
 python finetune_embedder.py --train data/unimib_yolo/crops/train --val data/unimib_yolo/crops/val \
     --out runs/embedder --epochs 20 --balanced
 python build_gallery.py --crops data/unimib_yolo/crops/train --checkpoint runs/embedder/best.pt --out gallery_ft.npz
 ```
 
-新增菜品（无需训练）：
+Adding dishes (no training):
 
 ```bash
-# new_dishes/<菜名>/*.jpg，可以是整张托盘照，--detector 会先用检测器裁出来，保证与运行时裁剪一致
+# new_dishes/<dish_name>/*.jpg, can be whole tray photos: --detector crops them with the detector first, so they match runtime crops
 python build_gallery.py --append gallery.npz --crops new_dishes/ --detector runs/detector/unimib/weights/best.pt --out gallery.npz
 ```
 
-图库记录了建库所用的嵌入模型配置，`--append` 时若嵌入模型不一致会拒绝执行（混用不同模型的向量会导致检索结果毫无意义）。
+The folder name is the class name: an existing class name (e.g. `banana`) adds reference photos to that class, a new name creates a class.
 
-## 4. 阈值校准与评估
+The gallery records the embedder configuration it was built with; `--append` refuses to run if the embedder differs (mixing vectors from different models makes retrieval meaningless).
+
+## 4. Threshold calibration and evaluation
 
 ```bash
-# 在 val 上校准：在“已接受项准确率 ≥ 98%”的约束下，选出接受率最高的阈值
+# calibrate on val: the thresholds with the highest accept rate subject to "precision of accepted items >= 98%"
 python evaluate.py --dataset data/unimib_yolo --gallery gallery.npz --detector oracle --split val --calibrate 0.98
 
-# 用校准出的阈值在 test 上做端到端评估
+# evaluate end to end on test with the calibrated thresholds
 python evaluate.py --dataset data/unimib_yolo --gallery gallery.npz \
     --detector runs/detector/unimib/weights/best.pt --split test \
     --accept-sim 0.xx --margin 0.xx --out report_test.json --save-vis vis_test/
 ```
 
-评估报告分为三级：
+The report has three levels:
 
-- **detection**：IoU≥0.5 时的精确率、召回率，以及“件数完全正确”的托盘比例；
-- **recognition_on_gt_crops**：用真值框裁剪，排除检测误差，单独衡量识别：top-1/top-3、接受率、已接受项准确率、最常见的混淆对、最差类别；
-- **end_to_end**：按托盘统计。`auto_correct_rate` 表示无需人工、小票完全正确的比例；**`silent_error_rate` 表示小票有错但系统没有要求复核的比例**，分为多收（overcharge）和少收（undercharge）。
+- **detection**: precision and recall at IoU >= 0.5, and the share of trays with exactly the right item count.
+- **recognition_on_gt_crops**: recognition alone, on ground-truth crops (no detection error): top-1/top-3, accept rate, precision of accepted items, most common confusions, worst classes.
+- **end_to_end**: per tray. `auto_correct_rate` is the share of fully correct receipts with no human involved; **`silent_error_rate` is the share of wrong receipts that the system did not flag for review**, split into overcharge and undercharge.
 
-对结算系统来说，`silent_error_rate` 是最关键的指标：被标记复核的错误只是体验问题，没被发现的错误才是真正的损失。
+For a checkout system `silent_error_rate` is the key metric: an error flagged for review is only a usability issue, an unnoticed error is a real loss.
 
-## 5. 运行
+## 5. Run
 
 ```bash
-cp data/unimib_yolo/prices_template.csv data/prices.csv    # 填写价格，weight_g（标准份重量）可选
+cp data/unimib_yolo/prices_template.csv data/prices.csv    # fill in prices; weight_g (standard portion weight) is optional
 python demo.py --config configs/checkout.yaml --image tray.jpg --weight 540 --save out.jpg
 ```
 
-小票中每道菜有三种状态：`accept`（自动计价）、`uncertain`（列出前几个候选，请顾客点选）、`unknown`（不在菜单中、不是食物或检测误报）。以下任一情况都会设置 `needs_review`：存在不确定或未识别项、没有检测到菜品、已识别的菜缺少价格，或称重与识别结果的标准重量之和偏差超过 `weight_tolerance`。
+Each item on the receipt has one of three states: `accept` (priced automatically), `uncertain` (the top candidates are shown for the customer to pick), `unknown` (not on the menu, not food, or a false detection). `needs_review` is set if any of these holds: an uncertain or unrecognised item, no dish detected, a recognised dish with no price, or a measured weight that deviates from the sum of standard weights by more than `weight_tolerance`.
 
 ---
 
-## 用于红队测试
+## For red-team testing
 
-这套系统设计成可以在本地作为靶机，全部组件都在自己的控制下：
+The system is designed to serve as a local target, with every component under your control:
 
-- **攻击面对应**：检测器（让菜品“消失”，即漏检 → 少收）、嵌入与检索（让菜品被识别成另一道更便宜的菜 → 错收）、阈值与复核逻辑（让错误结果以高置信度通过 → 静默错误）。
-- **衡量方式**：对 test 集图像施加你要测试的扰动或物理条件变化，再运行 `evaluate.py`，与干净图像的报告对比。重点看 `silent_error_rate` 和 `precision_of_accepted` 是否上升，而不只是 top-1 是否下降。
-- **已内置的防御层，可以逐一开关做消融实验**：开放集拒识（`unknown_sim`）、分差约束（`margin`）、称重交叉校验（`--weight`）、轮廓遮罩裁剪（`mask_bg`）、检测 TTA。
-- 值得补充的防御方向：对抗训练、局部梯度平滑等补丁检测预处理、多视角相机一致性检查。
+- **Attack surfaces**: the detector (make a dish "disappear", i.e. a missed detection → undercharge), embedding and retrieval (make a dish recognised as a different, cheaper one → wrong charge), thresholds and review logic (make a wrong result pass with high confidence → silent error).
+- **How to measure**: apply the perturbation or physical condition you want to test to the test-split images, run `evaluate.py`, and compare against the report on clean images. Look at whether `silent_error_rate` and `precision_of_accepted` go up, not just whether top-1 goes down.
+- **Built-in defence layers, each can be switched off for ablation**: open-set rejection (`unknown_sim`), the margin constraint (`margin`), the weight cross-check (`--weight`), outline-masked cropping (`mask_bg`), detector TTA.
+- Defences worth adding: adversarial training, patch-detection preprocessing such as local gradient smoothing, multi-camera consistency checks.
 
-请只在自己搭建或获得授权的系统上进行测试。
+Only test systems you built yourself or are authorised to test.
 
-## 已知局限
+## Known limitations
 
-- UNIMIB2016 只有约 1 千张图、73 类且长尾明显，部分类别只有个位数样本。top-1 数字会受划分影响，建议报告多次随机划分的均值。
-- 图库中每道菜的样本来自同一食堂同一批次，换食堂、换餐具或换光照后需要重新拍摄入库，阈值也需要重新校准。
-- 该数据集为西式（意大利）菜品；中式食堂需要自行采集数据，转换器支持同样的多边形标注格式。
+- UNIMIB2016 has only about 1k images and 73 long-tailed classes; some classes have single-digit sample counts. Top-1 depends on the split, so report the mean over several random splits.
+- Each dish's gallery samples come from the same canteen and the same batch. A different canteen, tableware or lighting requires new reference photos and recalibrated thresholds.
+- The dataset contains Western (Italian) dishes; other cuisines need their own data, and the converter supports the same polygon annotation format.
